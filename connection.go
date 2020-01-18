@@ -1,3 +1,6 @@
+// Package telnet implements base Telnet protocol specification.
+// It is primarily intended for implementing Telnet clients.
+// Maybe it can be helpful in Telnet server implementations too (if someone dare to make one)
 package telnet
 
 import (
@@ -10,43 +13,54 @@ import (
 
 const bufferSize int = 1024
 
-type telnetCommand byte // https://tools.ietf.org/html/rfc854
+// CommandCode type represents Telnet command codes
+type CommandCode byte
+
+// Telnet commands as per https://tools.ietf.org/html/rfc854
 const (
-	SE   telnetCommand = 240
-	SB   telnetCommand = 250
-	WILL telnetCommand = 251
-	WONT telnetCommand = 252
-	DO   telnetCommand = 253
-	DONT telnetCommand = 254
-	IAC  telnetCommand = 255
+	SE   CommandCode = 240
+	SB   CommandCode = 250
+	WILL CommandCode = 251
+	WONT CommandCode = 252
+	DO   CommandCode = 253
+	DONT CommandCode = 254
+	IAC  CommandCode = 255
 )
 
-type telnetOptionCode byte // https://www.iana.org/assignments/telnet-options/telnet-options.xhtml
+// OptionCode type represents Telnet option codes
+type OptionCode byte
+
+// Telnet option codes as per https://www.iana.org/assignments/telnet-options/telnet-options.xhtml
 const (
-	BinaryTransmission       telnetOptionCode = 0
-	Echo                     telnetOptionCode = 1
-	SuppressGoAhead          telnetOptionCode = 3
-	Status                   telnetOptionCode = 5
-	TerminalType             telnetOptionCode = 24
-	NegotiateAboutWindowSize telnetOptionCode = 31
-	TerminalSpeed            telnetOptionCode = 32
-	RemoteFlowControl        telnetOptionCode = 33
+	BinaryTransmission       OptionCode = 0
+	Echo                     OptionCode = 1
+	SuppressGoAhead          OptionCode = 3
+	Status                   OptionCode = 5
+	TerminalType             OptionCode = 24
+	NegotiateAboutWindowSize OptionCode = 31
+	TerminalSpeed            OptionCode = 32
+	RemoteFlowControl        OptionCode = 33
 )
 
-type telnetOptionHandler func(w *Connection, data []byte) error
+type optionHandler func(w *Connection, data []byte) error
 
-type telnetOption struct {
+type option struct {
 	weWill    bool                // true if we WILL perform option, false if we WON'T
 	peerDo    bool                // true if we DO allow peer to preform option, false if we DONT
-	sbHandler telnetOptionHandler
-	doHandler telnetOptionHandler
+	sbHandler optionHandler
+	doHandler optionHandler
 }
 
-type telnetOperation byte // Operation is option-specific. SEND and IS are common ones
+// Operation is not the term from Telnet specification.
+// It is defined and used in this package for convenience and clarity
+// Operations are used in Telnet subcommands (like TERMINAL-TYPE IS, TERMINAL-TYPE SEND in TERMINAL-TYPE (24) command)
+type Operation byte
+
+// Telnet operations are option-specific. SEND and IS are common ones
 const (
-	NONE telnetOperation = 255
-	IS   telnetOperation = 0
-	SEND telnetOperation = 1
+	NONE Operation = 255
+	IS   Operation = 0
+	SEND Operation = 1
 )
 
 type streamState int
@@ -63,7 +77,7 @@ const (
 // transparently handles any Telnet commands via registered OptionHandlers
 type Connection struct {
 	conn       net.Conn
-	options    map[telnetOptionCode]*telnetOption
+	options    map[OptionCode]*option
 	state      streamState
 	winSize    []byte
 }
@@ -133,12 +147,12 @@ func (p *Connection) Close() error {
 	return p.conn.Close()
 }
 
-// Add Telnet option to handle by Connection
-func (p *Connection) AddOption(optionCode telnetOptionCode, weWill bool, peerDo bool, sbHandler telnetOptionHandler, doHandler telnetOptionHandler) {
+// AddOption adds Telnet option to handle by Connection
+func (p *Connection) AddOption(optionCode OptionCode, weWill bool, peerDo bool, sbHandler optionHandler, doHandler optionHandler) {
 	if p.options == nil {
-		p.options = make(map[telnetOptionCode]*telnetOption)
+		p.options = make(map[OptionCode]*option)
 	}
-	option := telnetOption{
+	option := option{
 		weWill:     weWill,
 		peerDo:     peerDo,
 		sbHandler:  sbHandler,
@@ -147,7 +161,7 @@ func (p *Connection) AddOption(optionCode telnetOptionCode, weWill bool, peerDo 
 	p.options[optionCode] = &option
 }
 
-// Instructs remote peer to not echo
+// DisableRemoteEcho instructs remote peer to not echo
 func (p *Connection) DisableRemoteEcho() error {
 	command := []byte {byte(IAC), byte(DONT), byte(Echo)}
 	_, err := p.conn.Write(command)
@@ -171,7 +185,7 @@ func (p *Connection) processCommands(buffer *bytes.Buffer, outputData *bytes.Buf
 		case stateNotReady:
 			return errors.New("telnet connection is not ready")
 		case stateData:
-			if telnetCommand(b) == IAC {
+			if CommandCode(b) == IAC {
 				p.state = stateInIAC
 				commandBuffer = append(commandBuffer, b)
 			} else {
@@ -180,12 +194,12 @@ func (p *Connection) processCommands(buffer *bytes.Buffer, outputData *bytes.Buf
 
 		case stateInIAC:
 			commandBuffer = append(commandBuffer, b)
-			if telnetCommand(b) == WILL || telnetCommand(b) == WONT || telnetCommand(b) == DO || telnetCommand(b) == DONT {
+			if CommandCode(b) == WILL || CommandCode(b) == WONT || CommandCode(b) == DO || CommandCode(b) == DONT {
 				// Stay in this state, awaiting option code
-			} else if telnetCommand(b) == IAC {
+			} else if CommandCode(b) == IAC {
 				outputData.WriteByte(b)
 				p.state = stateData
-			} else if telnetCommand(b) == SB {
+			} else if CommandCode(b) == SB {
 				p.state = stateInSB
 			} else { // option code
 				if err := p.negotiateOption(commandBuffer); err != nil {
@@ -220,8 +234,8 @@ func (p *Connection) processCommands(buffer *bytes.Buffer, outputData *bytes.Buf
 }
 
 func (p Connection) negotiateOption(data []byte) error {
-	var receiverCommand = telnetCommand(data[1])
-	var receivedOptionCode = telnetOptionCode(data[2])
+	var receiverCommand = CommandCode(data[1])
+	var receivedOptionCode = OptionCode(data[2])
 	var err error
 
 	option, optionExist := p.options[receivedOptionCode]
@@ -266,7 +280,7 @@ func (p Connection) negotiateOption(data []byte) error {
 	return err
 }
 
-func (p Connection) sendSB(option telnetOptionCode, operation telnetOperation, data []byte) error {
+func (p Connection) sendSB(option OptionCode, operation Operation, data []byte) error {
 	result := make([]byte, 0, bufferSize)
 	result = append(result, byte(IAC), byte(SB), byte(option))
 	if operation != NONE {
@@ -282,7 +296,7 @@ func (p Connection) sendSB(option telnetOptionCode, operation telnetOperation, d
 // IAC SB TERMINAL-TYPE SEND IAC SE
 // IAC SB TERMINAL-TYPE IS ... IAC SE
 func terminalTypeOptionHandler(w *Connection, data []byte) error {
-	operation := telnetOperation(data[3])
+	operation := Operation(data[3])
 	if operation == SEND {
 		termString, ok := os.LookupEnv("TERM")
 		if !ok {
@@ -308,7 +322,7 @@ func negotiateAboutWindowSizeOptionHandler(w *Connection, data []byte) error {
 // IAC SB TERMINAL-SPEED SEND IAC SE
 // IAC SB TERMINAL-SPEED IS ... IAC SE
 func terminalSpeedOptionHandler(w *Connection, data []byte) error {
-	operation := telnetOperation(data[3])
+	operation := Operation(data[3])
 	if operation == SEND {
 		speed := []byte("115200,115200") // Someone will ever use this nowadays?
 		return w.sendSB(TerminalSpeed, IS, speed)

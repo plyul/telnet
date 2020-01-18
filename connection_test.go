@@ -67,7 +67,7 @@ func TestAddOption(t *testing.T) {
 		state:   0,
 		winSize: nil,
 	}
-	cmd := telnetOptionCode(88)
+	cmd := OptionCode(88)
 	c.AddOption(cmd, true, true, nil, nil)
 	option, optionExist := c.options[cmd]
 	if !optionExist || !option.weWill || !option.peerDo {
