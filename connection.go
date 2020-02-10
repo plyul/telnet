@@ -188,20 +188,23 @@ func (p *Connection) processCommands(buffer *bytes.Buffer, outputData *bytes.Buf
 			if CommandCode(b) == IAC {
 				p.state = stateInIAC
 				commandBuffer = append(commandBuffer, b)
-			} else {
-				outputData.WriteByte(b)
+				break
 			}
+			outputData.WriteByte(b)
 
 		case stateInIAC:
 			commandBuffer = append(commandBuffer, b)
-			if CommandCode(b) == WILL || CommandCode(b) == WONT || CommandCode(b) == DO || CommandCode(b) == DONT {
-				// Stay in this state, awaiting option code
-			} else if CommandCode(b) == IAC {
+			switch CommandCode(b) {
+			case WILL: // Stay in this state, awaiting option code
+			case WONT: // --/--
+			case DO: // --/--
+			case DONT: // --/--
+			case IAC: // This is escaped 0xFF data byte, not IAC
 				outputData.WriteByte(b)
 				p.state = stateData
-			} else if CommandCode(b) == SB {
+			case SB:
 				p.state = stateInSB
-			} else { // option code
+			default:
 				if err := p.negotiateOption(commandBuffer); err != nil {
 					return err
 				}
@@ -217,17 +220,16 @@ func (p *Connection) processCommands(buffer *bytes.Buffer, outputData *bytes.Buf
 
 		case stateEscIAC:
 			commandBuffer = append(commandBuffer, b)
-			if b == byte(IAC) {
+			switch b {
+			case byte(IAC):
 				p.state = stateInSB
-			}
-			if b == byte(SE) {
+			case byte(SE):
 				if err := p.negotiateOption(commandBuffer); err != nil {
 					return err
 				}
 				commandBuffer = commandBuffer[:0]
 				p.state = stateData
 			}
-
 		}
 	}
 	return nil
