@@ -44,7 +44,7 @@ func TestConnect(t *testing.T) {
 		t.Errorf("Received wrong number of bytes from server. Expected %d, got %d", len(serverData), n)
 	}
 
-	n, err = telnetConn.Read(data)
+	_, err = telnetConn.Read(data)
 	if err != io.EOF {
 		t.Error("Unexpected data from telnet connection")
 	}
@@ -55,7 +55,7 @@ func TestConnect(t *testing.T) {
 	}
 
 	n, err = telnetConn.Read(data)
-	if n != 0 || err.Error() != "telnet connection is not ready" {
+	if err == nil || n != 0 || err.Error() != "telnet connection is not ready" {
 		t.Fatal("Connection must return 'not ready' error after Close: ", err)
 	}
 }
@@ -83,7 +83,7 @@ func TestProcessCommands(t *testing.T) {
 		winSize: nil,
 	}
 
-	var input  bytes.Buffer
+	var input bytes.Buffer
 	var output bytes.Buffer
 
 	inputData := []byte("plain data")

@@ -45,8 +45,8 @@ const (
 type optionHandler func(w *Connection, data []byte) error
 
 type option struct {
-	weWill    bool                // true if we WILL perform option, false if we WON'T
-	peerDo    bool                // true if we DO allow peer to preform option, false if we DONT
+	weWill    bool // true if we WILL perform option, false if we WON'T
+	peerDo    bool // true if we DO allow peer to preform option, false if we DONT
 	sbHandler optionHandler
 	doHandler optionHandler
 }
@@ -76,10 +76,10 @@ const (
 // Connection provides standard ReadWriter interface to communicate with remote site and
 // transparently handles any Telnet commands via registered OptionHandlers
 type Connection struct {
-	conn       net.Conn
-	options    map[OptionCode]*option
-	state      streamState
-	winSize    []byte
+	conn    net.Conn
+	options map[OptionCode]*option
+	state   streamState
+	winSize []byte
 }
 
 // Connect returns Connection ready to serve Telnet data stream
@@ -153,17 +153,17 @@ func (p *Connection) AddOption(optionCode OptionCode, weWill bool, peerDo bool, 
 		p.options = make(map[OptionCode]*option)
 	}
 	option := option{
-		weWill:     weWill,
-		peerDo:     peerDo,
-		sbHandler:  sbHandler,
-		doHandler:  doHandler,
+		weWill:    weWill,
+		peerDo:    peerDo,
+		sbHandler: sbHandler,
+		doHandler: doHandler,
 	}
 	p.options[optionCode] = &option
 }
 
 // DisableRemoteEcho instructs remote peer to not echo
 func (p *Connection) DisableRemoteEcho() error {
-	command := []byte {byte(IAC), byte(DONT), byte(Echo)}
+	command := []byte{byte(IAC), byte(DONT), byte(Echo)}
 	_, err := p.conn.Write(command)
 	return err
 }
@@ -245,7 +245,7 @@ func (p Connection) negotiateOption(data []byte) error {
 		if !optionExist { // If we don't have received option in peer configuration, we WONT handle it
 			data[1] = byte(WONT)
 			_, err = p.conn.Write(data)
-			return nil
+			return err
 		}
 		if option.weWill {
 			data[1] = byte(WILL)
@@ -261,7 +261,7 @@ func (p Connection) negotiateOption(data []byte) error {
 		if !optionExist { // If we don't have received option in peer configuration, we DONT handle it
 			data[1] = byte(DONT)
 			_, err = p.conn.Write(data)
-			return nil
+			return err
 		}
 		if option.peerDo {
 			data[1] = byte(DO)
